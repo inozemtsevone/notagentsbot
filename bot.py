@@ -1,7 +1,7 @@
 import os
 from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 from io import BytesIO
 from docx import Document
 from docx.shared import RGBColor
@@ -1133,26 +1133,26 @@ FOREIGN_AGENT_NAMES = [
   "Юридическое лицо, зарегистрированное в Латвийской Республике, SIA «Medusa Project»"
 ]
 
+# Получаем токен из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise ValueError("Не найден токен BOT_TOKEN в переменных окружения")
+    raise ValueError("❌ Переменная окружения BOT_TOKEN не задана")
 
+# Инициализация бота и Flask
 bot = Bot(token=TOKEN)
 app = Flask(__name__)
-updater = Updater(token=TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+dispatcher = Dispatcher(bot, None, workers=1)  # ❗️ ВАЖНО: workers = 1
 
-# /start команда
-def start(update: Update, context):
+# Команда /start
+def start(update: Update, context=None):
     update.message.reply_text(
-        "🤖 Би-би-боп, Здравствуйте!\n\n"
-        "Я бот, который поможет тебе <b>автоматизировать</b> процесс в редактировании Word документов.\n\n"
-        "Отправьте мне Word-файл и я выделю имена иноагентов <b>красным цветом</b>.",
-        parse_mode='HTML'
+        "🤖 Привет! Я помогу тебе найти имена иноагентов в Word-документах.\n\n"
+        "Просто пришли мне файл .docx, и я верну его с выделенными именами красным цветом.",
+        parse_mode="HTML"
     )
 
-# Обработка .docx-файлов
-def handle_doc(update: Update, context):
+# Обработка .docx
+def handle_doc(update: Update, context=None):
     file = update.message.document.get_file()
     file_bytes = BytesIO()
     file.download(out=file_bytes)
@@ -1170,7 +1170,7 @@ def handle_doc(update: Update, context):
             for name in FOREIGN_AGENT_NAMES:
                 if original_text[i:i+len(name)] == name:
                     run = para.add_run(name)
-                    run.font.color.rgb = RGBColor(255, 0, 0)
+                    run.font.color.rgb = RGBColor(255, 0, 0)  # красный
                     i += len(name)
                     match_found = True
                     break
@@ -1182,13 +1182,14 @@ def handle_doc(update: Update, context):
     doc.save(output)
     output.seek(0)
 
-    update.message.reply_document(document=output, filename="Готовый файл.docx")
+    update.message.reply_document(document=output, filename="Иноагенты_отмечены.docx")
 
-# Регистрация хендлеров
+# Обработчики
 dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(MessageHandler(Filters.document.mime_type("application/vnd.openxmlformats-officedocument.wordprocessingml.document"), handle_doc))
+dispatcher.add_handler(MessageHandler(Filters.document.mime_type(
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"), handle_doc))
 
-# Flask webhook endpoint
+# Webhook
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
@@ -1197,10 +1198,9 @@ def webhook():
 
 @app.route("/")
 def index():
-    return "Bot is running"
+    return "Бот работает ✅"
 
-# Запуск сервера
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    print(f"🌐 Starting bot on port {port}")
     app.run(host="0.0.0.0", port=port)
-
