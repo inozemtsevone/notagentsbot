@@ -1,13 +1,14 @@
 import os
-from flask import Flask, request, send_file
+from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from io import BytesIO
 from docx import Document
 from docx.shared import RGBColor
 
-# Список имён иноагентов для зачеркивания (пример)
-FOREIGN_AGENT_NAMES = ["Иван Иванов", "Мария Петрова", "John Smith", "Ресурсный центр для ЛГБТ", "Босов Катерина Евгеньевна", "Общество с ограниченной ответственностью «ЕЛКИН КАРТОН»",
+# Список имён иноагентов
+FOREIGN_AGENT_NAMES = [
+    "Иван Иванов", "Мария Петрова", "John Smith", "Ресурсный центр для ЛГБТ", "Босов Катерина Евгеньевна", "Общество с ограниченной ответственностью «ЕЛКИН КАРТОН»",
     "Ресурсный центр для ЛГБТ",
     "Телеканал Дождь",
     "Anti-Corruption Foundation Inc.",
@@ -1129,7 +1130,8 @@ FOREIGN_AGENT_NAMES = ["Иван Иванов", "Мария Петрова", "Jo
   "Юридическое лицо Istories fonds",
   "Юридическое лицо «The Insider SIA»",
   "Юридическое лицо, зарегистрированное в Королевстве Нидерландов, Stichting 2 Oktober",
-  "Юридическое лицо, зарегистрированное в Латвийской Республике, SIA «Medusa Project»"]
+  "Юридическое лицо, зарегистрированное в Латвийской Республике, SIA «Medusa Project»"
+]
 
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
@@ -1137,9 +1139,11 @@ if not TOKEN:
 
 bot = Bot(token=TOKEN)
 app = Flask(__name__)
-dispatcher = Dispatcher(bot, None, workers=0)
+updater = Updater(token=TOKEN, use_context=True)
+dispatcher = updater.dispatcher
 
-def start(update: Update, context=None):
+# /start команда
+def start(update: Update, context):
     update.message.reply_text(
         "🤖 Би-би-боп, Здравствуйте!\n\n"
         "Я бот, который поможет тебе <b>автоматизировать</b> процесс в редактировании Word документов.\n\n"
@@ -1147,7 +1151,8 @@ def start(update: Update, context=None):
         parse_mode='HTML'
     )
 
-def handle_doc(update: Update, context=None):
+# Обработка .docx-файлов
+def handle_doc(update: Update, context):
     file = update.message.document.get_file()
     file_bytes = BytesIO()
     file.download(out=file_bytes)
@@ -1157,7 +1162,7 @@ def handle_doc(update: Update, context=None):
 
     for para in doc.paragraphs:
         original_text = para.text
-        para.clear()  # Очищаем параграф, чтобы вручную вставить отформатированные куски
+        para.clear()
 
         i = 0
         while i < len(original_text):
@@ -1165,7 +1170,7 @@ def handle_doc(update: Update, context=None):
             for name in FOREIGN_AGENT_NAMES:
                 if original_text[i:i+len(name)] == name:
                     run = para.add_run(name)
-                    run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
+                    run.font.color.rgb = RGBColor(255, 0, 0)
                     i += len(name)
                     match_found = True
                     break
@@ -1179,14 +1184,14 @@ def handle_doc(update: Update, context=None):
 
     update.message.reply_document(document=output, filename="Готовый файл.docx")
 
-# Регистрируем обработчики
+# Регистрация хендлеров
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.document.mime_type("application/vnd.openxmlformats-officedocument.wordprocessingml.document"), handle_doc))
 
+# Flask webhook endpoint
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, bot)
+    update = Update.de_json(request.get_json(force=True), bot)
     dispatcher.process_update(update)
     return "ok"
 
@@ -1194,7 +1199,8 @@ def webhook():
 def index():
     return "Bot is running"
 
+# Запуск сервера
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"Starting app on port {port}")
     app.run(host="0.0.0.0", port=port)
+
